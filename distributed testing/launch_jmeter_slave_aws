@@ -1,0 +1,82 @@
+#!/bin/bash
+# Default to 1 if no parameter is given
+count=10
+
+# Max of 20 machines only, change accordingly
+max=20
+
+if ! [[ $count =~ ^[0-9]+$ ]] || ! [[ "$count" -gt 0 && "$count" -le "$max" ]]; then
+    echo "[ERROR] Parameter is not a positive integer (must be 1 to $max)." >&2; exit 1
+fi
+
+if [ "$count" -gt "$max" ]; then
+    count=$max
+fi
+
+# Initialise env variables
+source ./app_aws.env
+
+iterator=1
+
+while [ "$iterator" -le "$count" ]; do
+
+    # Provision new machine
+    echo -e "
+    Provision machine for JMeter (Slave):
+    docker-machine create
+        --driver amazonec2
+        --amazonec2-access-key $AWS_ACCESS_KEY_ID
+        --amazonec2-secret-key $AWS_SECRET_ACCESS_KEY
+        --amazonec2-region $AWS_DEFAULT_REGION
+        --amazonec2-vpc-id $AWS_VPC_ID
+        --amazonec2-subnet-id $AWS_SUBNET_ID
+        --amazonec2-zone $AWS_ZONE
+        --amazonec2-ami $AWS_AMI
+        --engine-label type=slave
+        --swarm
+        --swarm-discovery token://$TOKEN
+        jmeter-slave-$iterator"
+    
+    docker-machine create \
+        --driver amazonec2 \
+        --amazonec2-access-key $AWS_ACCESS_KEY_ID \
+        --amazonec2-secret-key $AWS_SECRET_ACCESS_KEY \
+        --amazonec2-region $AWS_DEFAULT_REGION \
+        --amazonec2-vpc-id $AWS_VPC_ID \
+        --amazonec2-subnet-id $AWS_SUBNET_ID \
+        --amazonec2-zone $AWS_ZONE \
+        --amazonec2-ami $AWS_AMI \
+        --engine-label type=slave \
+        --swarm \
+        --swarm-discovery token://$TOKEN \
+        jmeter-slave-$iterator
+
+    # Set env variables to point to newly created machine
+    eval "$(docker-machine env jmeter-slave-$iterator)"
+
+    # Get public ip
+    ip=$(docker-machine ip jmeter-slave-$iterator)
+
+    # Run jmeter on new machine
+    echo -e "
+    Run JMeter in Server Mode:
+    docker run
+        --detach
+        --publish 1099:1099
+        --env IP=$ip
+        hhcordero/docker-jmeter-server"
+
+    docker run \
+        --detach \
+        --publish 1099:1099 \
+        --env IP=$ip \
+        hhcordero/docker-jmeter-server
+
+    # Concatenate slave ip addresses
+    server_ips+="$ip,"
+
+    let "iterator += 1"
+done
+
+echo "Slave IP's, for use in JMeter Master: $(echo $server_ips | sed 's/,*$//')"
+exit

@@ -1,0 +1,30 @@
+#!/bin/bash
+# replace env file to use, default to digitalocean
+app_env='app_do.env'
+
+# Generate token - use swarm for service discovery
+TOKEN=$(docker run --rm swarm create)
+
+echo "export TOKEN=$TOKEN" >> ./$app_env
+
+# Provision new machine
+echo -e "
+Provision machine for JMeter (Master):
+docker-machine create
+    --driver virtualbox
+    --engine-label type=master
+    --swarm
+    --swarm-master
+    --swarm-discovery token://$TOKEN
+    jmeter-master"
+
+docker-machine create \
+    --driver virtualbox \
+    --engine-label type=master \
+    --swarm \
+    --swarm-master \
+    --swarm-discovery token://$TOKEN \
+    jmeter-master
+
+echo "To manage swarm, make sure to run: eval \"\$(docker-machine env --swarm jmeter-master)\""
+exit
